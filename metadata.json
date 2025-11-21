@@ -1,0 +1,5 @@
+{
+  "name": "nexus-client-manager",
+  "description": "A comprehensive Client and Account management system with role-based access control, supervisor approval workflows, and product schema validation.",
+  "requestFramePermissions": []
+}
