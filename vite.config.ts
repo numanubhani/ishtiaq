@@ -17,7 +17,15 @@ export default defineConfig(({ mode }) => {
       resolve: {
         alias: {
           '@': path.resolve(__dirname, '.'),
-        }
+        },
+        dedupe: ['react', 'react-dom', 'react-is']
+      },
+      // Ensure react-is is properly resolved
+      esbuild: {
+        jsx: 'automatic'
+      },
+      ssr: {
+        noExternal: ['recharts', 'react-is']
       },
       build: {
         outDir: 'dist',
@@ -26,7 +34,24 @@ export default defineConfig(({ mode }) => {
         rollupOptions: {
           output: {
             manualChunks: undefined
+          },
+          onwarn(warning, warn) {
+            // Suppress "externalized" warnings for react-is
+            if (warning.code === 'UNRESOLVED_IMPORT' && warning.source === 'react-is') {
+              return;
+            }
+            warn(warning);
           }
+        },
+        commonjsOptions: {
+          include: [/node_modules/],
+          transformMixedEsModules: true
+        }
+      },
+      optimizeDeps: {
+        include: ['react', 'react-dom', 'react-is', 'recharts'],
+        esbuildOptions: {
+          resolveExtensions: ['.js', '.jsx', '.ts', '.tsx']
         }
       }
     };
