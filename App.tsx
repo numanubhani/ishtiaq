@@ -1,677 +1,468 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  LayoutDashboard, Users, MonitorSmartphone, ShieldCheck, 
-  Settings, LogOut, Plus, Edit, RefreshCcw, CheckCircle, XCircle,
-  History, Lock, Search, Filter, FileText
-} from 'lucide-react';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell
-} from 'recharts';
-import { 
-  Role, User, Client, Account, PendingAction, ApprovalStatus, 
-  ProductType, AccountType, AccountStatus 
-} from './types';
-import { MockService } from './services/mockDb';
+import React, { useState, useEffect } from 'react';
+import Layout from './components/Layout';
+import { Dashboard } from './components/Dashboard';
+import { Support } from './components/Support';
+import { Inventory, CRM, Sales, Finance, System, MyPurchases, ProductsManagement } from './components/Management';
+import { User, Account, Sale, Notification, Product, Ticket, Supplier, Profile, AuditLog, FinancialOperation } from './types';
+import { USERS, ACCOUNTS, SALES, NOTIFICATIONS, PRODUCTS, SUPPLIERS, PROFILES, AUDIT_LOGS, FINANCIAL_OPERATIONS, TICKETS } from './constants';
+import { ShieldCheck } from 'lucide-react';
+import { ToastProvider, useToast } from './components/Toast';
+import { storage } from './utils/storage';
 
-// --- TYPES & CONSTANTS ---
+// Wrap the main app logic to use the toast hook if needed in the top level, 
+// but mainly to provide the context
+const AppContent = () => {
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentView, setCurrentView] = useState('dashboard');
+  const [isDark, setIsDark] = useState(false);
+  const { addToast } = useToast();
 
-enum View {
-  LOGIN = 'LOGIN',
-  DASHBOARD = 'DASHBOARD',
-  CLIENTS = 'CLIENTS',
-  ACCOUNTS = 'ACCOUNTS',
-  APPROVALS = 'APPROVALS',
-  ADMIN = 'ADMIN'
-}
+  // Initialize storage with default data
+  useEffect(() => {
+    storage.initialize({
+      users: USERS,
+      accounts: ACCOUNTS,
+      sales: SALES,
+      notifications: NOTIFICATIONS,
+      tickets: TICKETS,
+      suppliers: SUPPLIERS,
+      profiles: PROFILES,
+      auditLogs: AUDIT_LOGS,
+      financialOps: FINANCIAL_OPERATIONS,
+    });
+  }, []);
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
-
-// --- COMPONENTS ---
-
-const Card = ({ children, className = '' }: { children: React.ReactNode, className?: string }) => (
-  <div className={`bg-white rounded-lg shadow-sm border border-slate-200 ${className}`}>
-    {children}
-  </div>
-);
-
-const Badge = ({ status }: { status: string }) => {
-  let classes = "bg-slate-100 text-slate-800";
-  switch (status) {
-    case 'Active':
-    case 'Normal':
-    case 'APPROVED':
-      classes = "bg-green-100 text-green-800";
-      break;
-    case 'PENDING':
-    case 'Pending Renewal':
-      classes = "bg-yellow-100 text-yellow-800";
-      break;
-    case 'REJECTED':
-    case 'Error':
-    case 'Locked':
-      classes = "bg-red-100 text-red-800";
-      break;
-    case 'Password Change Required':
-      classes = "bg-orange-100 text-orange-800";
-      break;
-  }
-  return <span className={`px-2 py-1 rounded-full text-xs font-semibold ${classes}`}>{status}</span>;
-};
-
-// --- FORMS & MODALS ---
-
-const ClientForm = ({ client, onClose, onSave }: { client?: Client, onClose: () => void, onSave: (data: any) => void }) => {
-  const [formData, setFormData] = useState({
-    name: client?.name || '',
-    email: client?.email || '',
-    status: client?.status || 'Active'
+  // Global State - Load from localStorage or use defaults
+  const [users, setUsers] = useState<User[]>(() => {
+    const stored = storage.getUsers();
+    return stored.length > 0 ? stored : USERS;
+  });
+  const [accounts, setAccounts] = useState<Account[]>(() => {
+    const stored = storage.getAccounts();
+    return stored.length > 0 ? stored : ACCOUNTS;
+  });
+  const [sales, setSales] = useState<Sale[]>(() => {
+    const stored = storage.getSales();
+    return stored.length > 0 ? stored : SALES;
+  });
+  const [notifications, setNotifications] = useState<Notification[]>(() => {
+    const stored = storage.getNotifications();
+    return stored.length > 0 ? stored : NOTIFICATIONS;
+  });
+  const [tickets, setTickets] = useState<Ticket[]>(() => {
+    const stored = storage.getTickets();
+    return stored.length > 0 ? stored : TICKETS;
+  });
+  const [suppliers, setSuppliers] = useState<Supplier[]>(() => {
+    const stored = storage.getSuppliers();
+    return stored.length > 0 ? stored : SUPPLIERS;
+  });
+  const [profiles, setProfiles] = useState<Profile[]>(() => {
+    const stored = storage.getProfiles();
+    return stored.length > 0 ? stored : PROFILES;
+  });
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
+    const stored = storage.getAuditLogs();
+    return stored.length > 0 ? stored : AUDIT_LOGS;
+  });
+  const [financialOps, setFinancialOps] = useState<FinancialOperation[]>(() => {
+    const stored = storage.getFinancialOperations();
+    return stored.length > 0 ? stored : FINANCIAL_OPERATIONS;
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSave(formData);
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <Card className="w-full max-w-md p-6">
-        <h2 className="text-xl font-bold mb-4 text-slate-900">{client ? 'Edit Client' : 'New Client'}</h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700">Company Name</label>
-            <input 
-              required
-              className="mt-1 block w-full rounded-md border-slate-300 shadow-sm p-2 border focus:ring-indigo-500 focus:border-indigo-500 bg-white text-slate-900"
-              value={formData.name}
-              onChange={e => setFormData({...formData, name: e.target.value})}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700">Email</label>
-            <input 
-              required type="email"
-              className="mt-1 block w-full rounded-md border-slate-300 shadow-sm p-2 border bg-white text-slate-900"
-              value={formData.email}
-              onChange={e => setFormData({...formData, email: e.target.value})}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700">Status</label>
-            <select 
-              className="mt-1 block w-full rounded-md border-slate-300 shadow-sm p-2 border bg-white text-slate-900"
-              value={formData.status}
-              onChange={e => setFormData({...formData, status: e.target.value})}
-            >
-              <option value="Active">Active</option>
-              <option value="Inactive">Inactive</option>
-              <option value="On Hold">On Hold</option>
-            </select>
-          </div>
-          <div className="flex justify-end space-x-3 pt-4">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-md">Cancel</button>
-            <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">Save</button>
-          </div>
-        </form>
-      </Card>
-    </div>
-  );
-};
-
-const AccountForm = ({ account, clients, onClose, onSave }: { account?: Account, clients: Client[], onClose: () => void, onSave: (data: any) => void }) => {
-  const [formData, setFormData] = useState<Partial<Account>>({
-    clientId: account?.clientId || (clients[0]?.id || ''),
-    usernameOnService: account?.usernameOnService || '',
-    encryptedPassword: account?.encryptedPassword || 'TempPass123!',
-    productType: account?.productType || ProductType.STREAMING,
-    accountType: account?.accountType || AccountType.REGULAR,
-    accountStatus: account?.accountStatus || AccountStatus.NORMAL,
-    internalNotes: account?.internalNotes || '',
-    productData: account?.productData || {}
-  });
-
-  // Dynamic fields based on product type
-  const renderProductFields = () => {
-    switch(formData.productType) {
-      case ProductType.STREAMING:
-        return (
-          <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded border border-slate-200">
-            <div className="col-span-2 font-semibold text-xs uppercase text-slate-500">Streaming Config</div>
-            <input placeholder="Max Screens" className="p-2 text-sm border rounded bg-white text-slate-900" 
-              value={formData.productData?.maxScreens || ''} 
-              onChange={e => setFormData({...formData, productData: {...formData.productData, maxScreens: e.target.value}})} />
-            <input placeholder="Resolution (4K/HD)" className="p-2 text-sm border rounded bg-white text-slate-900" 
-              value={formData.productData?.quality || ''} 
-              onChange={e => setFormData({...formData, productData: {...formData.productData, quality: e.target.value}})} />
-          </div>
-        );
-      case ProductType.VPN:
-        return (
-           <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded border border-slate-200">
-            <div className="col-span-2 font-semibold text-xs uppercase text-slate-500">VPN Config</div>
-            <input placeholder="Location" className="p-2 text-sm border rounded bg-white text-slate-900" 
-               value={formData.productData?.location || ''} 
-               onChange={e => setFormData({...formData, productData: {...formData.productData, location: e.target.value}})} />
-            <input placeholder="Protocol" className="p-2 text-sm border rounded bg-white text-slate-900" 
-               value={formData.productData?.protocol || ''} 
-               onChange={e => setFormData({...formData, productData: {...formData.productData, protocol: e.target.value}})} />
-          </div>
-        );
-      default:
-        return <div className="text-sm text-slate-500 italic">Standard configuration applied.</div>;
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <Card className="w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
-        <h2 className="text-xl font-bold mb-4 text-slate-900">{account ? 'Edit Account' : 'New Account'}</h2>
-        <form onSubmit={(e) => { e.preventDefault(); onSave(formData); }} className="space-y-4">
-          
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700">Client</label>
-              <select className="mt-1 block w-full rounded-md border-slate-300 border p-2 bg-white text-slate-900"
-                value={formData.clientId} onChange={e => setFormData({...formData, clientId: e.target.value})}>
-                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700">Product Type</label>
-              <select className="mt-1 block w-full rounded-md border-slate-300 border p-2 bg-white text-slate-900"
-                value={formData.productType} onChange={e => setFormData({...formData, productType: e.target.value as ProductType})}>
-                {Object.values(ProductType).map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-             <div>
-              <label className="block text-sm font-medium text-slate-700">Service Username</label>
-              <input required className="mt-1 block w-full rounded-md border-slate-300 border p-2 bg-white text-slate-900"
-                value={formData.usernameOnService} onChange={e => setFormData({...formData, usernameOnService: e.target.value})} />
-            </div>
-             <div>
-              <label className="block text-sm font-medium text-slate-700">Initial Password</label>
-              <input required type="password" className="mt-1 block w-full rounded-md border-slate-300 border p-2 bg-white text-slate-900"
-                value={formData.encryptedPassword} onChange={e => setFormData({...formData, encryptedPassword: e.target.value})} 
-                disabled={!!account} // Cannot change password directly in edit, must rotate
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700">Account Type</label>
-              <select className="mt-1 block w-full rounded-md border-slate-300 border p-2 bg-white text-slate-900"
-                value={formData.accountType} onChange={e => setFormData({...formData, accountType: e.target.value as AccountType})}>
-                {Object.values(AccountType).map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700">Status</label>
-              <select className="mt-1 block w-full rounded-md border-slate-300 border p-2 bg-white text-slate-900"
-                value={formData.accountStatus} onChange={e => setFormData({...formData, accountStatus: e.target.value as AccountStatus})}>
-                {Object.values(AccountStatus).map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-          </div>
-
-          {renderProductFields()}
-
-          <div>
-             <label className="block text-sm font-medium text-slate-700">Internal Notes</label>
-             <textarea className="mt-1 block w-full rounded-md border-slate-300 border p-2 bg-white text-slate-900" rows={3}
-                value={formData.internalNotes} onChange={e => setFormData({...formData, internalNotes: e.target.value})} />
-          </div>
-
-          <div className="flex justify-end space-x-3 pt-4">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-md">Cancel</button>
-            <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">Save</button>
-          </div>
-        </form>
-      </Card>
-    </div>
-  );
-};
-
-// --- MAIN APP COMPONENT ---
-
-export default function App() {
-  const [user, setUser] = useState<User | null>(null);
-  const [view, setView] = useState<View>(View.LOGIN);
-  const [loginUsername, setLoginUsername] = useState('');
-  const [error, setError] = useState('');
-
-  // Data State
-  const [clients, setClients] = useState<Client[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [pendingActions, setPendingActions] = useState<PendingAction[]>([]);
-  const [logs, setLogs] = useState<any[]>([]);
-
-  // Modal State
-  const [isClientModalOpen, setIsClientModalOpen] = useState(false);
-  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<any>(null);
-
-  // Refresh Data
-  const refreshData = async () => {
-    if (!user) return;
-    setClients(await MockService.getClients());
-    setAccounts(await MockService.getAccounts());
-    setPendingActions(await MockService.getPendingActions());
-    setLogs(await MockService.getLogs());
-  };
+  // Persist state changes to localStorage
+  useEffect(() => {
+    storage.saveUsers(users);
+  }, [users]);
 
   useEffect(() => {
-    if (user) refreshData();
-  }, [user, view]);
+    storage.saveAccounts(accounts);
+  }, [accounts]);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const foundUser = await MockService.login(loginUsername);
-    if (foundUser) {
-      setUser(foundUser);
-      setView(View.DASHBOARD);
-      setError('');
+  useEffect(() => {
+    storage.saveSales(sales);
+  }, [sales]);
+
+  useEffect(() => {
+    storage.saveNotifications(notifications);
+  }, [notifications]);
+
+  useEffect(() => {
+    storage.saveTickets(tickets);
+  }, [tickets]);
+
+  useEffect(() => {
+    storage.saveSuppliers(suppliers);
+  }, [suppliers]);
+
+  useEffect(() => {
+    storage.saveProfiles(profiles);
+  }, [profiles]);
+
+  useEffect(() => {
+    storage.saveAuditLogs(auditLogs);
+  }, [auditLogs]);
+
+  useEffect(() => {
+    storage.saveFinancialOperations(financialOps);
+  }, [financialOps]);
+
+  // Initialize Theme
+  useEffect(() => {
+    if (isDark) {
+      document.documentElement.classList.add('dark');
     } else {
-      setError('Invalid username. Try admin, supervisor, or operator.');
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDark]);
+
+  const toggleTheme = () => setIsDark(!isDark);
+
+  // Audit Log Helper
+  const logAction = (action: string, entityType: string, entityId: string, details?: string) => {
+    if (!currentUser) return;
+    const log: AuditLog = {
+      id: `log${Date.now()}`,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action,
+      entityType,
+      entityId,
+      details,
+      timestamp: new Date().toISOString()
+    };
+    setAuditLogs(prev => {
+      const updated = [log, ...prev];
+      storage.saveAuditLogs(updated);
+      return updated;
+    });
+  };
+
+  const handleLogin = (userId: string) => {
+    const user = users.find(u => u.id === userId);
+    if (user) {
+      setCurrentUser(user);
+      setCurrentView('dashboard');
+      addToast(`Welcome back, ${user.name}!`, 'success');
+      logAction('User Login', 'User', userId);
     }
   };
 
   const handleLogout = () => {
-    setUser(null);
-    setView(View.LOGIN);
-    setLoginUsername('');
+    setCurrentUser(null);
+    addToast('Logged out successfully', 'info');
   };
 
-  // Actions
-  const handleSaveClient = async (data: any) => {
-    if (!user) return;
-    await MockService.saveClient({ ...editingItem, ...data }, user);
-    setIsClientModalOpen(false);
-    setEditingItem(null);
-    refreshData();
+  // --- Data Handlers ---
+  const handleAddUser = (newUser: User) => {
+    const updatedUsers = [newUser, ...users];
+    setUsers(updatedUsers);
+    storage.saveUsers(updatedUsers);
+    addToast(`${newUser.role === 'CLIENT' ? 'Customer' : 'User'} ${newUser.name} created successfully`, 'success');
+    logAction('Create User', 'User', newUser.id, `Role: ${newUser.role}`);
+    const newNotif: Notification = {
+      id: `n${Date.now()}`,
+      message: `New ${newUser.role === 'CLIENT' ? 'customer' : 'user'} registered: ${newUser.name}`,
+      isRead: false,
+      timestamp: 'Just now'
+    };
+    const updatedNotifs = [newNotif, ...notifications];
+    setNotifications(updatedNotifs);
+    storage.saveNotifications(updatedNotifs);
   };
 
-  const handleSaveAccount = async (data: any) => {
-    if (!user) return;
-    await MockService.saveAccount({ ...editingItem, ...data }, user);
-    setIsAccountModalOpen(false);
-    setEditingItem(null);
-    refreshData();
+  const handleUpdateUser = (updatedUser: User) => {
+    const updated = users.map(u => u.id === updatedUser.id ? updatedUser : u);
+    setUsers(updated);
+    storage.saveUsers(updated);
+    addToast(`User ${updatedUser.name} updated successfully`, 'success');
+    logAction('Update User', 'User', updatedUser.id);
   };
 
-  const handleRotatePassword = async (id: string) => {
-    if (!user) return;
-    if (!window.confirm("Rotate password? This may trigger a workflow.")) return;
-    await MockService.rotatePassword(id, user);
-    refreshData();
+  const handleDeleteUser = (userId: string) => {
+    const user = users.find(u => u.id === userId);
+    if (user && user.id === currentUser?.id) {
+      addToast('Cannot delete your own account', 'error');
+      return;
+    }
+    const updated = users.filter(u => u.id !== userId);
+    setUsers(updated);
+    storage.saveUsers(updated);
+    addToast('User deleted successfully', 'success');
+    logAction('Delete User', 'User', userId);
   };
 
-  const handleApproval = async (id: string, approved: boolean) => {
-    if (!user) return;
-    await MockService.resolveAction(id, approved, user);
-    refreshData();
+  const handleRenewSale = (saleId: string, days: number) => {
+    const updated = sales.map(s => {
+      if (s.id === saleId) {
+        const currentEndDate = new Date(s.endDate);
+        currentEndDate.setDate(currentEndDate.getDate() + days);
+        logAction('Renew Sale', 'Sale', saleId, `Extended by ${days} days`);
+        return { ...s, endDate: currentEndDate.toISOString().split('T')[0], status: 'ACTIVE' as const };
+      }
+      return s;
+    });
+    setSales(updated);
+    storage.saveSales(updated);
+    addToast('Sale renewed successfully', 'success');
   };
 
-  // Views
-  if (!user) {
+  const handleReactivateSale = (saleId: string) => {
+    const updated = sales.map(s => {
+      if (s.id === saleId && s.status === 'EXPIRED') {
+        const today = new Date();
+        const newEndDate = new Date(today);
+        newEndDate.setDate(newEndDate.getDate() + 30);
+        logAction('Reactivate Sale', 'Sale', saleId);
+        return { ...s, status: 'ACTIVE' as const, startDate: today.toISOString().split('T')[0], endDate: newEndDate.toISOString().split('T')[0] };
+      }
+      return s;
+    });
+    setSales(updated);
+    storage.saveSales(updated);
+    addToast('Sale reactivated successfully', 'success');
+  };
+
+  const handleExpelSale = (saleId: string) => {
+    const sale = sales.find(s => s.id === saleId);
+    const updatedSales = sales.map(s => {
+      if (s.id === saleId) {
+        logAction('Expel Sale', 'Sale', saleId);
+        return { ...s, status: 'CANCELLED' as const };
+      }
+      return s;
+    });
+    setSales(updatedSales);
+    storage.saveSales(updatedSales);
+    
+    if (sale) {
+      const updatedProfiles = profiles.map(p => 
+        p.id === sale.profileId ? { ...p, status: 'AVAILABLE' as const } : p
+      );
+      setProfiles(updatedProfiles);
+      storage.saveProfiles(updatedProfiles);
+    }
+    addToast('Sale expelled and inventory freed', 'success');
+  };
+
+  const handleDeleteSale = (saleId: string) => {
+    const sale = sales.find(s => s.id === saleId);
+    const updatedSales = sales.filter(s => s.id !== saleId);
+    setSales(updatedSales);
+    storage.saveSales(updatedSales);
+    
+    if (sale) {
+      const updatedProfiles = profiles.map(p => 
+        p.id === sale.profileId ? { ...p, status: 'AVAILABLE' as const } : p
+      );
+      setProfiles(updatedProfiles);
+      storage.saveProfiles(updatedProfiles);
+    }
+    logAction('Delete Sale', 'Sale', saleId);
+    addToast('Sale deleted successfully', 'success');
+  };
+
+  const handleUpdateTicket = (ticket: Ticket) => {
+    const updated = tickets.map(t => t.id === ticket.id ? ticket : t);
+    setTickets(updated);
+    storage.saveTickets(updated);
+    logAction('Update Ticket', 'Ticket', ticket.id);
+    if (ticket.status === 'RESOLVED' || ticket.status === 'CLOSED') {
+      const newNotif: Notification = {
+        id: `n${Date.now()}`,
+        message: `Ticket #${ticket.id} has been ${ticket.status.toLowerCase()}`,
+        isRead: false,
+        timestamp: 'Just now'
+      };
+      const updatedNotifs = [newNotif, ...notifications];
+      setNotifications(updatedNotifs);
+      storage.saveNotifications(updatedNotifs);
+    }
+  };
+
+  const handleCreateTicket = (ticket: Ticket) => {
+    const updated = [ticket, ...tickets];
+    setTickets(updated);
+    storage.saveTickets(updated);
+    logAction('Create Ticket', 'Ticket', ticket.id);
+    
+    // Notify supervisors and admins about new tickets
+    const newNotif: Notification = {
+      id: `n${Date.now()}`,
+      message: `New ticket created: ${ticket.subject}${ticket.requesterId ? ` by ${users.find(u => u.id === ticket.requesterId)?.name || 'Client'}` : ''}`,
+      isRead: false,
+      timestamp: 'Just now'
+    };
+    const updatedNotifs = [newNotif, ...notifications];
+    setNotifications(updatedNotifs);
+    storage.saveNotifications(updatedNotifs);
+  };
+
+  const handleAddSupplier = (supplier: Supplier) => {
+    const updated = [supplier, ...suppliers];
+    setSuppliers(updated);
+    storage.saveSuppliers(updated);
+    logAction('Create Supplier', 'Supplier', supplier.id);
+    addToast('Supplier added successfully', 'success');
+  };
+
+  const handleUpdateSupplier = (supplier: Supplier) => {
+    const updated = suppliers.map(s => s.id === supplier.id ? supplier : s);
+    setSuppliers(updated);
+    storage.saveSuppliers(updated);
+    logAction('Update Supplier', 'Supplier', supplier.id);
+    addToast('Supplier updated successfully', 'success');
+  };
+
+  const handleDeleteSupplier = (supplierId: string) => {
+    const updated = suppliers.filter(s => s.id !== supplierId);
+    setSuppliers(updated);
+    storage.saveSuppliers(updated);
+    logAction('Delete Supplier', 'Supplier', supplierId);
+    addToast('Supplier deleted successfully', 'success');
+  };
+
+  const handleUpdateProfile = (profile: Profile) => {
+    const existing = profiles.find(p => p.id === profile.id);
+    const updated = existing 
+      ? profiles.map(p => p.id === profile.id ? profile : p)
+      : [...profiles, profile];
+    setProfiles(updated);
+    storage.saveProfiles(updated);
+    logAction(existing ? 'Update Profile' : 'Create Profile', 'Profile', profile.id);
+  };
+
+  const handleAddAccount = (newAccount: Account) => {
+    const updated = [newAccount, ...accounts];
+    setAccounts(updated);
+    storage.saveAccounts(updated);
+    addToast('Inventory updated successfully', 'success');
+    logAction('Create Account', 'Account', newAccount.id);
+  };
+
+  const handleAddSale = (newSale: Sale) => {
+    const updatedSales = [newSale, ...sales];
+    setSales(updatedSales);
+    storage.saveSales(updatedSales);
+    addToast('New sale recorded successfully', 'success');
+    
+    // Update account status
+    const updatedAccounts = accounts.map(acc => {
+      if (acc.productId === newSale.productName) {
+         return { ...acc, activeProfiles: acc.activeProfiles + 1, status: acc.activeProfiles + 1 >= acc.maxProfiles ? 'FULL' : 'AVAILABLE' };
+      }
+      return acc;
+    });
+    setAccounts(updatedAccounts);
+    storage.saveAccounts(updatedAccounts);
+
+    const newNotif: Notification = {
+      id: `n${Date.now()}`,
+      message: `New sale created for ${newSale.productName}`,
+      isRead: false,
+      timestamp: 'Just now'
+    };
+    const updatedNotifs = [newNotif, ...notifications];
+    setNotifications(updatedNotifs);
+    storage.saveNotifications(updatedNotifs);
+    logAction('Create Sale', 'Sale', newSale.id);
+  };
+
+  const handleClearNotifications = () => {
+    const updated = notifications.map(n => ({ ...n, isRead: true }));
+    setNotifications(updated);
+    storage.saveNotifications(updated);
+  };
+
+  // --- Login Screen (For Demo Purposes) ---
+  if (!currentUser) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-100">
-        <Card className="w-full max-w-md p-8">
-          <div className="text-center mb-8">
-            <div className="h-12 w-12 bg-indigo-600 rounded-lg mx-auto flex items-center justify-center mb-4">
-              <ShieldCheck className="text-white w-8 h-8" />
+      <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center p-4 transition-colors duration-200">
+        <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden border border-gray-200 dark:border-gray-700">
+          <div className="p-8 text-center border-b border-gray-200 dark:border-gray-700">
+            <div className="w-16 h-16 bg-brand-600 rounded-2xl mx-auto flex items-center justify-center mb-4 shadow-lg shadow-brand-600/30">
+              <ShieldCheck className="text-white w-10 h-10" />
             </div>
-            <h1 className="text-2xl font-bold text-slate-900">Nexus Manager</h1>
-            <p className="text-slate-500">Secure Client & Account Access</p>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">NexusManager</h1>
+            <p className="text-gray-500 dark:text-gray-400 mt-2">SaaS Management Platform</p>
           </div>
-          <form onSubmit={handleLogin} className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-slate-700">Username</label>
-              <input 
-                type="text" 
-                value={loginUsername}
-                onChange={(e) => setLoginUsername(e.target.value)}
-                className="mt-1 block w-full p-3 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white text-slate-900"
-                placeholder="admin / supervisor / operator"
-              />
-            </div>
-            {error && <p className="text-red-500 text-sm">{error}</p>}
-            <button type="submit" className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
-              Sign In
-            </button>
-          </form>
-          <div className="mt-6 text-xs text-center text-slate-400">
-            <p>Demo Credentials:</p>
-            <p>admin / supervisor / operator</p>
+          <div className="p-6 space-y-4">
+            <p className="text-sm text-center text-gray-500 dark:text-gray-400 mb-4">Select a role to demo the experience:</p>
+            {users.slice(0,4).map(user => (
+              <button
+                key={user.id}
+                onClick={() => handleLogin(user.id)}
+                className="w-full flex items-center p-4 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-brand-500 dark:hover:border-brand-500 hover:shadow-md transition-all group bg-gray-50 dark:bg-gray-800/50 hover:bg-white dark:hover:bg-gray-800"
+              >
+                <img src={user.avatar} alt={user.name} className="w-10 h-10 rounded-full mr-4 object-cover border border-gray-200 dark:border-gray-600" />
+                <div className="text-left">
+                  <p className="font-semibold text-gray-900 dark:text-white group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">{user.name}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">{user.role}</p>
+                </div>
+              </button>
+            ))}
           </div>
-        </Card>
+          <div className="bg-gray-50 dark:bg-gray-900/50 p-4 text-center border-t border-gray-200 dark:border-gray-700">
+            <p className="text-xs text-gray-400">© 2023 Nexus Systems. All rights reserved.</p>
+          </div>
+        </div>
       </div>
     );
   }
 
-  const SidebarItem = ({ icon: Icon, label, targetView }: any) => (
-    <button 
-      onClick={() => setView(targetView)}
-      className={`w-full flex items-center space-x-3 px-4 py-3 text-sm font-medium rounded-md transition-colors ${view === targetView ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
-    >
-      <Icon size={20} />
-      <span>{label}</span>
-    </button>
-  );
-
-  // -- Dashboard View --
-  const DashboardView = () => {
-    const typeData = Object.values(ProductType).map(type => ({
-      name: type,
-      value: accounts.filter(a => a.productType === type).length
-    }));
-
-    const statusData = Object.values(AccountStatus).map(status => ({
-        name: status,
-        value: accounts.filter(a => a.accountStatus === status).length
-    })).filter(i => i.value > 0);
-
-    return (
-      <div className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card className="p-6 flex items-center space-x-4">
-            <div className="p-3 bg-blue-100 rounded-full"><Users className="text-blue-600" /></div>
-            <div>
-              <p className="text-sm text-slate-500">Total Clients</p>
-              <h3 className="text-2xl font-bold text-slate-900">{clients.length}</h3>
-            </div>
-          </Card>
-          <Card className="p-6 flex items-center space-x-4">
-            <div className="p-3 bg-indigo-100 rounded-full"><MonitorSmartphone className="text-indigo-600" /></div>
-            <div>
-              <p className="text-sm text-slate-500">Total Accounts</p>
-              <h3 className="text-2xl font-bold text-slate-900">{accounts.length}</h3>
-            </div>
-          </Card>
-          <Card className="p-6 flex items-center space-x-4">
-            <div className="p-3 bg-orange-100 rounded-full"><Lock className="text-orange-600" /></div>
-            <div>
-              <p className="text-sm text-slate-500">Pending Actions</p>
-              <h3 className="text-2xl font-bold text-slate-900">{pendingActions.length}</h3>
-            </div>
-          </Card>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card className="p-6">
-                <h3 className="font-semibold mb-4 text-slate-800">Products Distribution</h3>
-                <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={typeData}>
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey="name" />
-                            <YAxis />
-                            <Tooltip contentStyle={{ color: '#1e293b' }} />
-                            <Bar dataKey="value" fill="#6366f1" radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                    </ResponsiveContainer>
-                </div>
-            </Card>
-            <Card className="p-6">
-                <h3 className="font-semibold mb-4 text-slate-800">Account Status Health</h3>
-                <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                            <Pie data={statusData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                                {statusData.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                ))}
-                            </Pie>
-                            <Tooltip contentStyle={{ color: '#1e293b' }} />
-                            <Legend />
-                        </PieChart>
-                    </ResponsiveContainer>
-                </div>
-            </Card>
-        </div>
-      </div>
-    );
+  // --- Main Router Logic ---
+  const renderContent = () => {
+    switch (currentView) {
+      case 'dashboard':
+        return <Dashboard user={currentUser} onChangeView={setCurrentView} salesData={sales} tickets={tickets} users={users} />;
+      case 'support':
+        return <Support currentUser={currentUser} tickets={tickets} onUpdateTicket={handleUpdateTicket} onCreateTicket={handleCreateTicket} users={users} />;
+      case 'inventory':
+        return <Inventory accounts={accounts} products={PRODUCTS} profiles={profiles} onAddAccount={handleAddAccount} onUpdateProfile={handleUpdateProfile} suppliers={suppliers} />;
+      case 'crm':
+        return <CRM users={users} sales={sales} onAddUser={handleAddUser} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} currentUser={currentUser} />;
+      case 'sales':
+        return <Sales sales={sales} users={users} products={PRODUCTS} profiles={profiles} accounts={accounts} onAddSale={handleAddSale} onRenewSale={handleRenewSale} onReactivateSale={handleReactivateSale} onExpelSale={handleExpelSale} onDeleteSale={handleDeleteSale} currentUser={currentUser} />;
+      case 'my-purchases': 
+        return <MyPurchases sales={sales} currentUser={currentUser} onCreateTicket={handleCreateTicket} />;
+      case 'finance':
+        return <Finance sales={sales} products={PRODUCTS} users={users} financialOps={financialOps} onAddFinancialOp={(op) => { 
+          const updated = [op, ...financialOps];
+          setFinancialOps(updated);
+          storage.saveFinancialOperations(updated);
+          logAction('Create Financial Operation', 'Financial', op.id);
+        }} />;
+      case 'system':
+        return <System auditLogs={auditLogs} />;
+      case 'products':
+        return <ProductsManagement products={PRODUCTS} suppliers={suppliers} onUpdateSupplier={handleUpdateSupplier} onAddSupplier={handleAddSupplier} onDeleteSupplier={handleDeleteSupplier} />;
+      default:
+        return <Dashboard user={currentUser} onChangeView={setCurrentView} salesData={sales} tickets={tickets} users={users} />;
+    }
   };
 
-  // -- Clients View --
-  const ClientsView = () => (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-slate-800">Clients</h2>
-        <button onClick={() => { setEditingItem(null); setIsClientModalOpen(true); }} className="flex items-center space-x-2 bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">
-          <Plus size={18} /> <span>Add Client</span>
-        </button>
-      </div>
-      <Card className="overflow-hidden">
-        <table className="min-w-full divide-y divide-slate-200">
-          <thead className="bg-slate-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Name</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Email</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-slate-200">
-            {clients.map(client => (
-              <tr key={client.id}>
-                <td className="px-6 py-4 whitespace-nowrap font-medium text-slate-900">{client.name}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-slate-500">{client.email}</td>
-                <td className="px-6 py-4 whitespace-nowrap"><Badge status={client.status} /></td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                  <button onClick={() => { setEditingItem(client); setIsClientModalOpen(true); }} className="text-indigo-600 hover:text-indigo-900 flex items-center space-x-1">
-                    <Edit size={16} /> <span>Edit</span>
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
-    </div>
-  );
-
-  // -- Accounts View --
-  const AccountsView = () => (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-slate-800">Accounts</h2>
-        <button onClick={() => { setEditingItem(null); setIsAccountModalOpen(true); }} className="flex items-center space-x-2 bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">
-          <Plus size={18} /> <span>Add Account</span>
-        </button>
-      </div>
-      <div className="grid grid-cols-1 gap-4">
-        {accounts.map(acc => {
-            const clientName = clients.find(c => c.id === acc.clientId)?.name || 'Unknown';
-            return (
-                <Card key={acc.id} className="p-4">
-                    <div className="flex justify-between items-start">
-                        <div>
-                            <div className="flex items-center space-x-2">
-                                <h3 className="font-bold text-lg text-slate-900">{acc.usernameOnService}</h3>
-                                <Badge status={acc.accountStatus} />
-                                <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded border border-slate-200">{acc.productType}</span>
-                            </div>
-                            <p className="text-sm text-slate-500 mt-1">Client: {clientName} • Type: {acc.accountType}</p>
-                            <div className="mt-2 text-sm font-mono bg-slate-50 text-slate-700 p-2 rounded inline-block border border-slate-200">
-                                Password: {acc.encryptedPassword.substring(0, 4)}••••••••
-                            </div>
-                        </div>
-                        <div className="flex space-x-2">
-                            <button 
-                                onClick={() => handleRotatePassword(acc.id)}
-                                className="p-2 text-orange-600 hover:bg-orange-50 rounded tooltip-trigger" title="Rotate Password">
-                                <RefreshCcw size={18} />
-                            </button>
-                            <button 
-                                onClick={() => { setEditingItem(acc); setIsAccountModalOpen(true); }}
-                                className="p-2 text-blue-600 hover:bg-blue-50 rounded" title="Edit">
-                                <Edit size={18} />
-                            </button>
-                        </div>
-                    </div>
-                    {/* Product Specific Data Display */}
-                    {acc.productData && Object.keys(acc.productData).length > 0 && (
-                        <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500 grid grid-cols-2 gap-2">
-                            {Object.entries(acc.productData).map(([k, v]) => (
-                                <div key={k}><span className="font-semibold capitalize">{k}:</span> {v}</div>
-                            ))}
-                        </div>
-                    )}
-                </Card>
-            );
-        })}
-      </div>
-    </div>
-  );
-
-  // -- Approvals View --
-  const ApprovalsView = () => (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-slate-800">Pending Approvals</h2>
-      {pendingActions.length === 0 ? (
-        <div className="text-center py-12 text-slate-500 bg-white rounded-lg border border-dashed border-slate-300">
-            <CheckCircle className="mx-auto h-12 w-12 text-slate-300 mb-3" />
-            <p>All caught up! No pending actions.</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-            {pendingActions.map(action => (
-                <Card key={action.id} className="p-4 flex justify-between items-center">
-                    <div>
-                        <div className="flex items-center space-x-2 mb-1">
-                            <span className={`font-bold text-sm px-2 py-0.5 rounded ${action.type === 'DELETE' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
-                                {action.type}
-                            </span>
-                            <span className="font-semibold text-slate-700">{action.entity}</span>
-                            <span className="text-xs text-slate-400">ID: {action.entityId || 'New'}</span>
-                        </div>
-                        <p className="text-sm text-slate-600">
-                            Requested by <span className="font-medium text-slate-900">{action.requestedBy}</span> on {new Date(action.requestedAt).toLocaleDateString()}
-                        </p>
-                        <div className="mt-2 text-xs text-slate-500 bg-slate-50 p-2 rounded border">
-                            <pre>{JSON.stringify(action.data, null, 2)}</pre>
-                        </div>
-                    </div>
-                    {user.role !== Role.OPERATOR && (
-                        <div className="flex flex-col space-y-2 ml-4">
-                            <button onClick={() => handleApproval(action.id, true)} className="flex items-center space-x-1 bg-green-600 text-white px-3 py-1.5 rounded text-sm hover:bg-green-700">
-                                <CheckCircle size={14} /> <span>Approve</span>
-                            </button>
-                            <button onClick={() => handleApproval(action.id, false)} className="flex items-center space-x-1 bg-red-600 text-white px-3 py-1.5 rounded text-sm hover:bg-red-700">
-                                <XCircle size={14} /> <span>Reject</span>
-                            </button>
-                        </div>
-                    )}
-                </Card>
-            ))}
-        </div>
-      )}
-    </div>
-  );
-
-  // -- Admin View --
-  const AdminView = () => (
-    <div className="space-y-6">
-        <h2 className="text-2xl font-bold text-slate-800">System Logs & Admin</h2>
-        <Card className="overflow-hidden">
-            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200">
-                <h3 className="font-bold text-slate-700">Audit Log</h3>
-            </div>
-            <div className="max-h-96 overflow-y-auto">
-                <table className="min-w-full divide-y divide-slate-200">
-                    <thead className="bg-slate-50 sticky top-0">
-                        <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Time</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Actor</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Action</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Details</th>
-                        </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-slate-200">
-                        {logs.map(log => (
-                            <tr key={log.id}>
-                                <td className="px-6 py-2 whitespace-nowrap text-xs text-slate-500">{new Date(log.timestamp).toLocaleString()}</td>
-                                <td className="px-6 py-2 whitespace-nowrap text-sm font-medium text-slate-900">{log.actor}</td>
-                                <td className="px-6 py-2 whitespace-nowrap text-sm text-slate-600">{log.action}</td>
-                                <td className="px-6 py-2 text-sm text-slate-500">{log.details}</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        </Card>
-    </div>
-  );
-
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-900">
-      {/* Sidebar */}
-      <div className="w-64 bg-white border-r border-slate-200 flex flex-col">
-        <div className="p-6 border-b border-slate-100">
-          <div className="flex items-center space-x-2 text-indigo-600 font-bold text-xl">
-            <ShieldCheck className="w-8 h-8" />
-            <span>Nexus</span>
-          </div>
-        </div>
-        
-        <nav className="flex-1 p-4 space-y-1">
-          <SidebarItem icon={LayoutDashboard} label="Dashboard" targetView={View.DASHBOARD} />
-          <SidebarItem icon={Users} label="Clients" targetView={View.CLIENTS} />
-          <SidebarItem icon={MonitorSmartphone} label="Accounts" targetView={View.ACCOUNTS} />
-          
-          {(user.role === Role.ADMIN || user.role === Role.SUPERVISOR) && (
-            <SidebarItem icon={FileText} label="Approvals" targetView={View.APPROVALS} />
-          )}
-          
-          {user.role === Role.ADMIN && (
-            <SidebarItem icon={Settings} label="Admin & Logs" targetView={View.ADMIN} />
-          )}
-        </nav>
-
-        <div className="p-4 border-t border-slate-100 bg-slate-50">
-          <div className="flex items-center space-x-3 mb-3">
-            <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold uppercase">
-              {user.username[0]}
-            </div>
-            <div className="flex-1 overflow-hidden">
-              <p className="text-sm font-medium text-slate-900 truncate">{user.username}</p>
-              <p className="text-xs text-slate-500 uppercase">{user.role}</p>
-            </div>
-          </div>
-          <button onClick={handleLogout} className="w-full flex items-center justify-center space-x-2 text-sm text-slate-600 hover:text-red-600 p-2 hover:bg-white rounded transition-colors border border-transparent hover:border-slate-200">
-            <LogOut size={16} /> <span>Sign Out</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 overflow-auto p-8">
-        {view === View.DASHBOARD && <DashboardView />}
-        {view === View.CLIENTS && <ClientsView />}
-        {view === View.ACCOUNTS && <AccountsView />}
-        {view === View.APPROVALS && <ApprovalsView />}
-        {view === View.ADMIN && <AdminView />}
-      </div>
-
-      {/* Modals */}
-      {isClientModalOpen && (
-        <ClientForm 
-            client={editingItem} 
-            onClose={() => setIsClientModalOpen(false)} 
-            onSave={handleSaveClient} 
-        />
-      )}
-      {isAccountModalOpen && (
-        <AccountForm 
-            account={editingItem} 
-            clients={clients}
-            onClose={() => setIsAccountModalOpen(false)} 
-            onSave={handleSaveAccount} 
-        />
-      )}
-    </div>
+    <Layout 
+      currentUser={currentUser} 
+      onLogout={handleLogout}
+      currentView={currentView}
+      onChangeView={setCurrentView}
+      isDark={isDark}
+      toggleTheme={toggleTheme}
+      notifications={notifications}
+      onClearNotifications={handleClearNotifications}
+    >
+      {renderContent()}
+    </Layout>
   );
-}
+};
+
+const App = () => {
+  return (
+    <ToastProvider>
+      <AppContent />
+    </ToastProvider>
+  );
+};
+
+export default App;
